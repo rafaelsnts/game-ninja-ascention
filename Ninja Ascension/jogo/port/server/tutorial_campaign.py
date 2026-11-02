@@ -15,6 +15,25 @@ GREAT_SHINOBI_DAILY = {
 }
 GREAT_SHINOBI_COOLDOWN_SECONDS = 10 * 60
 
+# The original campaign content available in the supplied reference ends at
+# chapter 24 for these three modes. Scene IDs are global and contiguous:
+# Main 1-50, Elite 51-100, Nightmare 101-150.
+CAMPAIGN_SCENE_LIMITS = {0: 24, 1: 74, 15: 124}
+
+
+def campaign_scene_allowed(scene, definition=None):
+    """Return whether a Main/Elite/Nightmare scene is within chapter 24."""
+    try:
+        scene = int(scene)
+        definition = definition or data.tabela('pve_scene.txt').get(str(scene))
+        if not definition:
+            return False
+        scene_type = int(definition[5])
+        limit = CAMPAIGN_SCENE_LIMITS.get(scene_type)
+        return limit is None or scene <= limit
+    except (IndexError, TypeError, ValueError):
+        return False
+
 
 def _daily_reset_day():
     # play_config's original UI says the daily reset occurs at 05:00 local.
@@ -138,7 +157,7 @@ MISSIONS = mission_index()
 
 def resume_record(db,account):
     """Local checkpoint inside the original login record field, no new parser."""
-    if not tutorial_enabled():return ''
+    if not tutorial_enabled(db,account):return ''
     with db._lock:
         rows=db._conn.execute('SELECT progress FROM tutorial_events WHERE conta_id=? AND mould LIKE ?',
                              (account,'3:%')).fetchall()
@@ -162,6 +181,13 @@ def scene_tokens(db, account):
     completed = {(int(row[0]), int(row[1])): int(row[2]) for row in clears}
     with db._lock:
         claims=db._conn.execute('SELECT scene,chest FROM local_scene_rewards WHERE conta_id=?',(account,)).fetchall()
+        has_npc_receipts=db._conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='local_npc_chest_rewards'").fetchone()
+        if has_npc_receipts:
+            npc_claims=db._conn.execute(
+                'SELECT npc,tier FROM local_npc_chest_rewards WHERE conta_id=?',(account,)).fetchall()
+        else:
+            npc_claims=[]
     masks={}
     for scene,chest in claims:masks[scene]=masks.get(scene,0)|(1<<chest)
     def npc_groups(row):
@@ -172,6 +198,7 @@ def scene_tokens(db, account):
     states, stars = [], []
     for scene in ids:
         row = scenes[str(scene)]
+        allowed = campaign_scene_allowed(scene, row)
         groups = npc_groups(row)
         count = 0
         for group in groups:
@@ -189,12 +216,16 @@ def scene_tokens(db, account):
             return bool(required) and all(
                 any((prior,npc) in completed for npc in group)
                 for group in required if group)
-        unlocked = grade>=int(row[4]) and all(cleared(prior) for prior in previous)
+        unlocked = allowed and grade>=int(row[4]) and all(cleared(prior) for prior in previous)
         # Do not hide already persisted victories from an older local version.
-        unlocked = unlocked or count>0
+        unlocked = allowed and (unlocked or count>0)
         states.append(str(count if unlocked else -1))
         stars.append(str(sum(value for (s,_),value in completed.items() if s==scene)))
-    return ['6020', ','.join(states), ','.join(states), ','.join(stars), ','.join(str(masks.get(scene,0)) for scene in ids)]
+    normal_npcs=','.join(str(npc) for npc,tier in npc_claims if int(tier)==0) or '-1'
+    three_star_npcs=','.join(str(npc) for npc,tier in npc_claims if int(tier)==1) or '-1'
+    return ['6020', ','.join(states), ','.join(states), ','.join(stars),
+            ','.join(str(masks.get(scene,0)) for scene in ids),
+            '373',normal_npcs,'12408',three_star_npcs]
 
 
 def npc_tokens(db, account):
@@ -239,6 +270,9 @@ def install(server):
             if progress not in MISSIONS:
                 raise ValueError('etapa_ausente_no_acervo')
             definition=MISSIONS[progress]
+            import initial_tutorial
+            if initial_tutorial.managed(db,account) and (definition[0]!=3 or int(definition[1][0])>7):
+                raise ValueError('fora_do_tutorial_inicial')
             mould = '%s:%s' % (definition[0],definition[1][0])
             with db._lock:
                 previous=db._conn.execute('SELECT progress FROM tutorial_events WHERE conta_id=? AND mould=?',(account,mould)).fetchone()
@@ -246,7 +280,9 @@ def install(server):
                     db._conn.execute('INSERT OR REPLACE INTO tutorial_events VALUES (?,?,?)', (account,mould,progress))
                 db._conn.commit()
             server.log('tutorial etapa=%s conta_id=%s salva' % (progress,account))
-            return '%s education_change 0' % seq
+            if definition[0]==3 and definition[1][0]=='7' and int(definition[1][1])>=12:
+                with db._lock,db._conn:initial_tutorial.finish(db,account)
+            return ' '.join([str(seq),'education_change','0']+(initial_tutorial.login_tokens(db,account) if initial_tutorial.managed(db,account) else []))
         except (server._contas.ErroConta, ValueError) as exc:
             return server.recusa('education_change',seq,str(exc))
 
@@ -261,6 +297,8 @@ def install(server):
             account, lines=identity(text,'battle_result_start')
             if len(lines)<5: raise ValueError('batalha_invalida')
             scene,npc,difficulty=int(lines[2]),int(lines[3]),int(lines[4])
+            if not campaign_scene_allowed(scene):
+                raise ValueError('fase_fora_do_conteudo_disponivel')
             counter=GREAT_SHINOBI_DAILY.get(scene)
             if counter:
                 if remaining_great_shinobi(db,account,counter[0]) <= 0:
@@ -283,6 +321,8 @@ def install(server):
             if len(lines)<7: raise ValueError('resultado_incompleto')
             scene=int(lines[2]); npc=int(lines[3].split('-')[-1]); stars=int(lines[4]); difficulty=int(lines[5])
             if not 0<=stars<=3 or not 1<=difficulty<=3 or lines[6].strip()!='1': raise ValueError('resultado_invalido')
+            if not campaign_scene_allowed(scene):
+                raise ValueError('fase_fora_do_conteudo_disponivel')
             with db._lock:
                 pending=db._conn.execute('SELECT scene,npc,difficulty FROM local_battle_pending WHERE conta_id=?',(account,)).fetchone()
             repetido=False
@@ -304,19 +344,24 @@ def install(server):
                         # Guided (tutorial) mode only: one level per first clear,
                         # preserving each level-triggered lesson. Normal play uses
                         # the original EXP rule below (player_level_local).
-                        if tutorial_enabled():
+                        if tutorial_enabled(db,account):
                             grade=min(grade+1,max(int(k) for k in data.tabela('user_experience_param.txt') if k.isdigit()))
-                        silver+=int(reward[0]);changed=True
+                        import events_local
+                        silver+=int(reward[0])*(2 if scene==151 and events_local.effect_enabled('ryo') else 1);changed=True
                         db._conn.execute('INSERT INTO local_pve_clears VALUES (?,?,?,?)',(account,scene,npc,stars))
+                        if events_local.effect_enabled('festival') and int(data.tabela('pve_scene.txt')[str(scene)][5]) in (0,1,15) and campaign_scene_allowed(scene):
+                            from scene_rewards_local import _apply_npc_reward
+                            _apply_npc_reward(db,account,[(1809,6,1)])
                         db._conn.execute('INSERT OR REPLACE INTO local_campaign VALUES (?,?,?)',(account,grade,silver))
                         db._conn.execute('INSERT INTO tutorial_progress VALUES (?,0) ON CONFLICT(conta_id) DO UPDATE SET experiencia=0',(account,))
                     elif stars>exists[0]:
                         db._conn.execute('UPDATE local_pve_clears SET stars=? WHERE conta_id=? AND scene=? AND npc=?',(stars,account,scene,npc))
-                    if not tutorial_enabled():
+                    if not tutorial_enabled(db,account):
                         # Original rule: every victory grants player EXP equal
                         # to the battle's energy cost (npc.attack_need_food).
                         import player_level_local
-                        nivel=player_level_local.ganhar(db,account,int(npc_row[118] or 0))
+                        import events_local
+                        nivel=player_level_local.ganhar(db,account,int(npc_row[118] or 0)*(2 if scene==152 and events_local.effect_enabled('exp') else 1))
                     db._conn.execute('DELETE FROM local_battle_pending WHERE conta_id=?',(account,))
                     db._conn.execute('INSERT OR REPLACE INTO local_battle_done VALUES (?,?,?,?)',(account,scene,npc,difficulty))
                     if scene in GREAT_SHINOBI_DAILY:

@@ -5,6 +5,11 @@
 -- 修改记录：
 -- 最后修改人：
 -------------------------------------------------------------------------------------------------------
+local function energyClockSeconds(value)
+	local parts=zstring.split(value, ":")
+	return (tonumber(parts[1]) or 0)*3600+(tonumber(parts[2]) or 0)*60+(tonumber(parts[3]) or 0)
+end
+
 ActivityAddEnergy = class("ActivityAddEnergyClass", Window)
     
 function ActivityAddEnergy:ctor()
@@ -173,6 +178,7 @@ function ActivityAddEnergy:onUpdateDraw()
 			local Image_add_strength_yi = ccui.Helper:seekWidgetByName(root, "Image_add_strength_yi_"..i)
 			--未到时间
 			local Image_add_strength_not = ccui.Helper:seekWidgetByName(root, "Image_add_strength_not_"..i)
+			if Button_add_strength_rec and Button_add_strength_go and Image_add_strength_yi and Image_add_strength_not and energyData[i] and add_enger_info[i] then
 			Button_add_strength_rec:setVisible(false)
 			Button_add_strength_go:setVisible(false)
 			Image_add_strength_yi:setVisible(false)
@@ -184,8 +190,8 @@ function ActivityAddEnergy:onUpdateDraw()
 				Text_add_strength_time:setString(string.format(activity_add_energy_tips[i],(energy_infok1[1]..":"..energy_infok1[2].."-"..energy_infok2[1]..":"..energy_infok2[2])))
 			end
 			local add_enger_data = zstring.split(add_enger_info[i],",")
-			local earlyMorning1 = tonumber(zstring.split(energy_info[1], ":")[1])*3600
-			local earlyMorning2 = tonumber(zstring.split(energy_info[2], ":")[1])*3600
+			local earlyMorning1 = energyClockSeconds(energy_info[1])
+			local earlyMorning2 = energyClockSeconds(energy_info[2])
 			earlyMorning1 = earlyMorning1 <= refreshTime and (earlyMorning1 + oneDaySeconds) or earlyMorning1
 			earlyMorning2 = earlyMorning2 <= refreshTime and (earlyMorning2 + oneDaySeconds) or earlyMorning2
 			if createUserData.year ~= temp.year
@@ -208,14 +214,15 @@ function ActivityAddEnergy:onUpdateDraw()
 					Image_add_strength_not:setVisible(true)
 				end
 			end
+			end
 		end
 		
 		-- 一直显示补领倒计时
 		self.distance = refreshTime + oneDaySeconds - newTimes
-		if self.distance ~= 0 then
-			ccui.Helper:seekWidgetByName(root, "Text_add_strength_time_now"):setString(self:formatTimeString(self.distance))
-		else
-			ccui.Helper:seekWidgetByName(root, "Text_add_strength_time_now"):setString("")
+		if self.distance ~= 0 and self._Text_add_strength_time_now then
+			self._Text_add_strength_time_now:setString(self:formatTimeString(self.distance))
+		elseif self._Text_add_strength_time_now then
+			self._Text_add_strength_time_now:setString("")
 		end
 	else
 		app.load("client.reward.DrawGainReward")
@@ -263,7 +270,7 @@ function ActivityAddEnergy:formatTimeString(_time)	--系统时间转换
 end
 
 function ActivityAddEnergy:onUpdate(dt)
-	if self.distance ~= 0 then
+	if self.distance ~= 0 and self._Text_add_strength_time_now then
 		self.distance = self.distance - dt
 		self._Text_add_strength_time_now:setString(self:formatTimeString(self.distance))
 		if self.distance == 0 then

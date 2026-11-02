@@ -9,6 +9,10 @@
 -- 进度未到的功能入口封闭
 -- TipDlg.drawTextDailog(_function_unopened_tip_string)
 
+-- TEMPORARIO: abrir o Recruit extraido para teste visual. Volte para false
+-- para retornar ao recrutamento atual sem alterar o restante do Home.
+NR_RECRUIT_ORIGINAL_TEST = true
+
 Home = class("HomeClass", Window)
 Home.__userHeroFontName = nil
 
@@ -787,7 +791,8 @@ function Home:ctor()
 				-- _ED._npc_difficulty_index = 1
 				-- protocol_command.battle_field_init.param_list = "".._ED._current_scene_id.."\r\n".._ED._scene_npc_id.."\r\n".._ED._npc_difficulty_index.."\r\n".."0"
 				-- NetworkManager:register(protocol_command.battle_field_init.code, nil, nil, nil, nil, responseBattleInitCallback, true, nil)
-				TipDlg.drawTextDailog(_function_unopened_tip_string)
+				app.load("client.activity.LocalEventWindow")
+				fwin:open(LocalEventWindow:new():init("event","fund"),fwin._view)
                 return true
             end,
             _terminal = nil,
@@ -2337,6 +2342,13 @@ function Home:ctor()
             _instance = self,
             _state = 0,
             _invoke = function(terminal, instance, params)
+                if NR_RECRUIT_ORIGINAL_TEST == true then
+                    app.load("client.shop.recruit.HeroRecruitListView")
+                    if fwin:find("HeroRecruitListViewClass") == nil then
+                        fwin:open(HeroRecruitListView:new(), fwin._view)
+                    end
+                    return true
+                end
                 state_machine.excute("new_recruit_main_window_open", 0, nil)
                 return true
             end,
@@ -5448,7 +5460,6 @@ end
 
 function Home:updateTargetTaskState( ... )
     local root = self.roots[1]
-
     local Panel_2 = ccui.Helper:seekWidgetByName(root, "Panel_2")
     if Panel_2 == nil then
         Panel_2 = ccui.Helper:seekWidgetByName(root, "Panel_2_xr1")
@@ -5508,6 +5519,8 @@ function Home:updateTargetTaskState( ... )
             Panel_2:setVisible(false)
         end
     end
+    -- NinjaAscension: keep the achievement data current but hide its home banner.
+    if Panel_2 ~= nil then Panel_2:setVisible(false) end
 end
 
 function Home:playHeroEffect()
@@ -6342,10 +6355,14 @@ function Home:onEnterTransitionFinish()
             end
             
             --装备碎片丢到包裹里了，所以包裹按钮 加上装备合成的推送
-            state_machine.excute("push_notification_center_manager", 0, { _terminal_name = "push_notification_center_equipment_warehouse_all",
-            _widget = ccui.Helper:seekWidgetByName(root, "Button_warehouse"),
-            _invoke = nil,
-            _interval = 0.5,})
+			-- A notificação de síntese ficava ancorada fora do botão Bag no layout
+			-- desktop do Naruto. Mantemos os avisos nos outros projetos.
+			if __lua_project_id ~= __lua_project_l_naruto then
+				state_machine.excute("push_notification_center_manager", 0, { _terminal_name = "push_notification_center_equipment_warehouse_all",
+				_widget = ccui.Helper:seekWidgetByName(root, "Button_warehouse"),
+				_invoke = nil,
+				_interval = 0.5,})
+			end
     		
     		--商城
     		fwin:addTouchEventListener(ccui.Helper:seekWidgetByName(root, "Button_shop_0"), 		nil, 
@@ -6829,6 +6846,12 @@ function Home:onEnterTransitionFinish()
         end
     end
     self.Panel_hd_tuisong = ccui.Helper:seekWidgetByName(root, "Panel_hd_tuisong")
+    local homePlatform = cc.Application:getInstance():getTargetPlatform()
+    local isMobileHome = homePlatform == cc.PLATFORM_OS_ANDROID or homePlatform == cc.PLATFORM_OS_IPHONE or homePlatform == cc.PLATFORM_OS_IPAD
+    if self.Panel_hd_tuisong and not isMobileHome then
+        self.Panel_hd_tuisong:setVisible(false)
+        self.Panel_hd_tuisong:setTouchEnabled(false)
+    end
     -- iphone刘海适配
     if (__lua_project_id == __lua_project_l_digital or __lua_project_id == __lua_project_l_dragonball or __lua_project_id == __lua_project_l_dragonball2) and isIphoneX() then 
         if self.Panel_hd_tuisong then 
@@ -6927,15 +6950,7 @@ function Home:onEnterTransitionFinish()
             nil, 0)
         end
 
-        local Button_1 = ccui.Helper:seekWidgetByName(root, "Button_1")
-        if Button_1 ~= nil then
-            fwin:addTouchEventListener(Button_1,   nil, 
-            {
-                terminal_name = "target_task_window_open",    
-                terminal_state = 0, 
-            }, 
-            nil, 0)
-        end
+        -- Main Instance Challenge was removed from the home screen.
 
         if __lua_project_id == __lua_project_l_digital or __lua_project_id == __lua_project_l_dragonball or __lua_project_id == __lua_project_l_dragonball2 or __lua_project_id == __lua_project_l_pokemon or __lua_project_id == __lua_project_onepiece then
         else
@@ -7068,6 +7083,14 @@ function Home:modelOpenPush()
 end
 
 function Home:updateHomeAcivityPushUIInfo( currId, isAllShow )
+    local platform = cc.Application:getInstance():getTargetPlatform()
+    local isMobile = platform == cc.PLATFORM_OS_ANDROID or platform == cc.PLATFORM_OS_IPHONE or platform == cc.PLATFORM_OS_IPAD
+    if not isMobile then
+        local root = self.roots and self.roots[1]
+        local banner = root and ccui.Helper:seekWidgetByName(root, "Panel_hd_tuisong")
+        if banner then banner:setVisible(false);banner:setTouchEnabled(false) end
+        return
+    end
     local isOpend = false
     for k,v in pairs(_ED.home_activity_push_info) do
         if v ~= nil and v.isHaveOpen == true then
@@ -7241,6 +7264,27 @@ end
 -- because other activity updates may attempt to make these visible again.
 function Home:hideLocalPromotionShortcuts()
     if not self.roots or not self.roots[1] then return end
+    if not self._localEventShortcuts then
+        local root = self.roots[1]
+        app.load("client.activity.ActivityWindow")
+        app.load("client.cells.activity.activity_icon_cell")
+        self._localEventShortcuts = {}
+        -- Original APK shortcut cells, grouped below the profile and clock.
+        local kinds = {"ACTIVITY_EXCITING_ICON", "ACTIVITY_HOME_FIRST_RECHARGE_ICON",
+            "ACTIVITY_SEVEN_DAY_TWO_ICONTWO", "ACTIVITY_SEVEN_DAY_ICON"}
+        local size = root:getContentSize()
+        for i, kind in ipairs(kinds) do
+            local icon = ActivityIconCell:createCell()
+            icon:init(icon.enum_type[kind])
+            icon:setName("NinjaAscensionEventShortcut"..i)
+            icon:setScale(0.8)
+            icon:setPosition(cc.p(8 + ((i-1)%4)*96, size.height-165-math.floor((i-1)/4)*88))
+            root:addChild(icon, 40)
+            icon:setVisible(true)
+            table.insert(self._localEventShortcuts, icon)
+        end
+        self._localEventsButton = self._localEventShortcuts[1]
+    end
     if not self._localPromotionNodes then
         self._localPromotionNodes = {}
         local hidden={Button_huodong=true,Button_chongzhi=true,Button_libao=true,Button_kefu=true,

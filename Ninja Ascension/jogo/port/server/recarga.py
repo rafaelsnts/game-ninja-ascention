@@ -26,12 +26,16 @@ import traceback
 # sao removidas antes de recarregar. Assim os comandos do proprio servidor
 # (local_server.py) nunca somem do despacho.
 COMANDOS = {
+    'initial_tutorial': [],
+    'tutorial_skip': ['tutorial_start','tutorial_skip'],
     'achievements_local': ['draw_achievement_reward'],
     'mythical_local': ['magical_animals_activate','magical_animals_advance_star','magical_animals_forging','magical_animals_steps_rebirth','magical_animals_relevant_active','magical_animals_set_skill','magical_animals_set_skill_release_method','magical_animals_activate_fate','magical_animals_activate_get_fate_task_reward'],
     'saga_local': ['biographies_activate','biographies_advance','biographies_rebirth','biographies_mark_synthesis','biographies_buy_prop','biographies_draw','biographies_get_extra_reward','biographies_achieve_activate','biographies_rank'],
     'constellation_local': ['constellation_buy','constellation_exchange'],
     'artifact_local': ['artifact_unlock','artifact_culture','artifact_confirm'],
     'mudra_local': ['ship_metal_set','ship_metal_escalate','ship_metal_onekey_escalate','ship_metal_dissolve','draw_matrix_reward'],
+    # Must reload after mudra_local because Recruit wraps its bounty handlers.
+    'legacy_recruit_local': ['ship_bounty', 'ship_batch_bounty'],
     'index_local': ['user_card_info_activate','user_card_info_advance','user_card_info_rank'],
     'ninja_school_local': ['ship_talent_init','artifact_init','combine_ship_init','user_card_info_init','biographies_init','magical_animals_init','ship_spirit_init','ship_talent_level_up','ship_talent_reset','ship_spirit_level_up','ship_spirit_batch_level_up'],
     'hero_gates_local': ['mega_unblock','mega_level_up','mega_use_skill'],
@@ -49,11 +53,13 @@ COMANDOS = {
     'profile_local': ['user_info_modify'],
     'online_reward_local': ['trigger_scene_surprise'],
     'energia': ['power_swallow', 'draw_endurance_init', 'get_web_recharge_state'],
+    'mail_local': ['email_init','reward_center_init','get_user_mail','user_send_mail','user_read_mail','one_key_read_mail','delete_mail','delete_all_mail','draw_attachment_in_mail','one_key_draw_attachment_in_mail'],
     'formacao_pesadelo': ['get_hard_copy_user_formation'],
     'recruitment_local': ['new_recruitment_system', 'formation_change'],
-    'hero_training_local': ['ship_grow_up','ship_escalate','ship_awaken','ship_skill_level_up','ship_skill_level_up_one_key','ship_soul_level_up'],
+    'hero_training_local': ['ship_grow_up','ship_escalate','ship_awaken','ship_skill_level_up','ship_skill_level_up_one_key','ship_soul_level_up','ship_rebirth_init','ship_rebirth'],
+    'chat_local': ['send_message','refush_msg'],
     'tutorial_synthesis': ['prop_compound'],
-    'scene_rewards_local': ['draw_scene_rewad', 'one_key_draw_scene_reward'],
+    'scene_rewards_local': ['draw_scene_rewad', 'one_key_draw_scene_reward', 'draw_scene_npc_rewad'],
     # tutorial_campaign ENVOLVE handle_battle_result_start do local_server
     # (linha 98: original = server.MINIMOS[...]). A chave pertence ao
     # local_server, entao NAO pode ser removida aqui: o modulo se limita a
@@ -61,9 +67,10 @@ COMANDOS = {
     'tutorial_campaign': [],
     'ninja_trial_local': ['three_kingdoms_init', 'three_kingdoms_launch', 'three_kingdoms_draw_score_reward', 'three_kingdoms_sweep', 'dignified_shop_buy', 'unparallel_purchase'],
     'worldboss_local': ['rebel_army_init'],
-    'purify_local': ['ship_purify_init'],
+    'purify_local': ['ship_purify_init', 'ship_purify_team_manager', 'ship_purify_team_launch', 'ship_purify_buy_battle_reward'],
     'dados_batalha': [],
     'quest_local': ['daily_mission_init','draw_daily_mission_reward','draw_liveness_reward'],
+    'events_local': ['local_event_init','local_event_action'],
 }
 MODULOS = list(COMANDOS)
 

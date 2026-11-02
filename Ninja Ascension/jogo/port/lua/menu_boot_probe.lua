@@ -45,6 +45,56 @@ local ok,err=xpcall(function()
     __lua_project_id=__lua_project_l_naruto
     _ED.user_info.user_id='1';_ED.user_info.user_grade='1';_ED.user_info.user_experience='1'
     _ED.user_info.user_food='60';_ED.user_info.max_user_food='60'
+    if os.getenv('NR_PROBE_EVENTS')=='1' then
+        dofile(NR_PROBE_ROOT..'tools/probe_events.lua')
+        return
+    end
+    if os.getenv('NR_PROBE_RECRUIT_LAYOUT')=='1' then
+        dofile(NR_PROBE_ROOT..'tools/probe_recruit_layout.lua');return
+    end
+    if os.getenv('NR_PROBE_RECRUIT_TICKET')=='1' then
+        app.load('client.login.LoginLoading');app.load('client.home.Menu')
+        NetworkManager.register=function() return false end
+        local files=cc.FileUtils:getInstance()
+        NetworkProtocol.parser_func({resouce=files:getStringFromFile(NR_PROBE_ROOT..'build/recruit-ticket/login.txt')})
+        assert(tonumber(getPropAllCountByMouldId(239))==11)
+        _ED.new_reward_object={};_ED.new_prop_object={};_ED.prop_chest_store_recruiting=true
+        NetworkProtocol.parser_func({resouce=files:getStringFromFile(NR_PROBE_ROOT..'build/recruit-ticket/single.txt')})
+        assert(tonumber(getPropAllCountByMouldId(239))==10,'Ticket consumption missing from real client parser')
+        assert(tonumber(_ED.user_info.user_gold)==0,'Ticket draw changed gold balance')
+        local result=assert(io.open(NR_PROBE_ROOT..'build/recruit-ticket/native-result.txt','w'))
+        result:write('passed');result:close()
+        return
+    end
+    if os.getenv('NR_PROBE_FORMATION_REOPEN')=='1' then
+        dofile(NR_PROBE_ROOT..'tools/probe_formation_reopen.lua')
+        return
+    end
+    if os.getenv('NR_PROBE_INITIAL_TUTORIAL')=='1' then
+        app.load('client.login.LoginLoading');app.load('client.home.Menu')
+        NetworkManager.register=function() error('Native tutorial fixture attempted network access') end
+        local files=cc.FileUtils:getInstance()
+        NetworkProtocol.parser_func({resouce=files:getStringFromFile(NR_PROBE_ROOT..'build/initial-tutorial-skipped-login.txt')})
+        assert(_ED.user_info.user_grade=='6' and require('initial_tutorial').state=='skipped')
+        assert(not require('tutorial_disabled').enabled)
+        local heroes=0
+        for _ in pairs(_ED.user_ship) do heroes=heroes+1 end
+        assert(heroes==3,'Skip must restore exactly the three earned characters')
+        NetworkProtocol.parser_func({resouce=files:getStringFromFile(NR_PROBE_ROOT..'build/initial-tutorial-choice-login.txt')})
+        assert(_ED.user_info.user_grade=='1' and require('initial_tutorial').state=='choice')
+        assert(require('tutorial_disabled').enabled)
+        app.load('client.mission.TutorialSkip')
+        local window=TutorialSkipWindow:new():init()
+        fwin:open(window,fwin._screen)
+        fwin:addService({delay=0.5,callback=function()
+            assert(window.root and window.root:getChildrenCount()>0,'Initial choice did not render')
+            assert(files:isFileExist('fonts/ReggaeOne-Regular.ttf'),'Original choice font missing')
+            local result=assert(io.open(NR_PROBE_ROOT..'build/initial-tutorial-native-result.txt','w'))
+            result:write('passed');result:close()
+            print('INITIAL_TUTORIAL_NATIVE_PASSED actual login parsers, skipped roster, fresh choice window')
+        end})
+        return
+    end
     if os.getenv('NR_PROBE_SAGA_UI')=='1' then
         app.load('client.login.LoginLoading');app.load('client.home.Menu')
         app.load('client.cells.utils.resources_icon_cell')
@@ -570,6 +620,10 @@ local ok,err=xpcall(function()
     end
     app.load('client.login.LoginLoading')
     app.load('client.home.Menu')
+    if os.getenv('NR_PROBE_LEGACY_RECRUIT_UI')=='1' then
+        dofile(NR_PROBE_ROOT..(os.getenv('NR_PROBE_RECRUIT_RESULTS')=='1' and 'tools/probe_recruit_results.lua' or 'tools/probe_legacy_recruit.lua'))
+        return
+    end
     if os.getenv('NR_PROBE_NORMAL_RECRUIT')=='1' then
         NetworkManager.register=function() return false end
         local files=cc.FileUtils:getInstance()
@@ -996,6 +1050,18 @@ local ok,err=xpcall(function()
     end
 end,debug.traceback)
 print('MENU_BOOT_PROBE_RESULT '..tostring(ok)..' '..tostring(err))
+if os.getenv('NR_PROBE_EVENTS')=='1' then
+    local result=assert(io.open(NR_PROBE_ROOT..'build/events-native-result.txt','w'))
+    result:write(tostring(ok)..' '..tostring(err));result:close()
+end
+if os.getenv('NR_PROBE_INITIAL_TUTORIAL')=='1' and not ok then
+    local result=assert(io.open(NR_PROBE_ROOT..'build/initial-tutorial-native-result.txt','w'))
+    result:write(tostring(err));result:close()
+end
+if os.getenv('NR_PROBE_LEGACY_RECRUIT_UI')=='1' then
+    local result=assert(io.open(NR_PROBE_ROOT..'build/legacy-recruit-native/result.txt','w'))
+    result:write(tostring(ok)..' '..tostring(err));result:close()
+end
 if os.getenv('NR_PROBE_QUICK_UPGRADES')=='1' or os.getenv('NR_PROBE_TREASURE')=='1' or os.getenv('NR_PROBE_EQUIPMENT_DEVELOPMENT')=='1' or os.getenv('NR_PROBE_SAGA_UI')=='1' then
     local name=os.getenv('NR_PROBE_SAGA_UI')=='1' and 'saga-ui' or (os.getenv('NR_PROBE_EQUIPMENT_DEVELOPMENT')=='1' and 'equipment-development' or (os.getenv('NR_PROBE_TREASURE')=='1' and 'treasure' or 'quick-upgrades'))
     local result=assert(io.open(NR_PROBE_ROOT..'build/'..name..'-native-result.txt','w'))

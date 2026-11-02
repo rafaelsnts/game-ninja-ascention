@@ -2052,15 +2052,16 @@ end
 function LDuplicateWindow:getOpenScene()
 	local sceneid = 0
 	local _scenes = nil
+	local sceneLimit = nil
 	if LDuplicateWindow._infoDatas._type  == 1 then 
 		--普通副本
 		_scenes = dms.searchs(dms["pve_scene"], pve_scene.scene_type, 0)
+		sceneLimit = 24
 		for i, v in pairs(_scenes) do
 			local tempSceneId = dms.atoi(v, pve_scene.id)
-			if _ED.scene_current_state[tempSceneId] == nil
+			if tempSceneId <= sceneLimit and (_ED.scene_current_state[tempSceneId] == nil
 				or _ED.scene_current_state[tempSceneId] == ""
-				or tonumber(_ED.scene_current_state[tempSceneId]) < 0 
-				then
+				or tonumber(_ED.scene_current_state[tempSceneId]) < 0) then
 				sceneid = i - 1
 				break
 			end
@@ -2075,13 +2076,13 @@ function LDuplicateWindow:getOpenScene()
 	elseif LDuplicateWindow._infoDatas._type  == 2 then
 		--精英副本
 		_scenes = dms.searchs(dms["pve_scene"], pve_scene.scene_type, 1)
+		sceneLimit = 74
 
 		for i, v in pairs(_scenes) do
 			local tempSceneId = dms.atoi(v, pve_scene.id)
-			if _ED.scene_current_state[tempSceneId] == nil
+			if tempSceneId <= sceneLimit and (_ED.scene_current_state[tempSceneId] == nil
 				or _ED.scene_current_state[tempSceneId] == ""
-				or tonumber(_ED.scene_current_state[tempSceneId]) < 0 
-				then
+				or tonumber(_ED.scene_current_state[tempSceneId]) < 0) then
 				sceneid = tempSceneId - 1
 				break
 			end
@@ -2089,15 +2090,40 @@ function LDuplicateWindow:getOpenScene()
 	elseif LDuplicateWindow._infoDatas._type  == 15 then
 		--噩梦副本
 		_scenes = dms.searchs(dms["pve_scene"], pve_scene.scene_type, 15)
+		sceneLimit = 124
 		for i, v in pairs(_scenes) do
 			local tempSceneId = dms.atoi(v, pve_scene.id)
-			if _ED.scene_current_state[tempSceneId] == nil
+			if tempSceneId <= sceneLimit and (_ED.scene_current_state[tempSceneId] == nil
 				or _ED.scene_current_state[tempSceneId] == ""
-				or tonumber(_ED.scene_current_state[tempSceneId]) < 0 
-				then
+				or tonumber(_ED.scene_current_state[tempSceneId]) < 0) then
 				sceneid = tempSceneId - 1
 				break
 			end
+		end
+	end
+	-- Hide chapters beyond the last chapter present in the original reference.
+	-- Keep the source rows and their global IDs intact for protocol compatibility.
+	if _scenes ~= nil and sceneLimit ~= nil then
+		local available = {}
+		for _, row in pairs(_scenes) do
+			if dms.atoi(row, pve_scene.id) <= sceneLimit then
+				table.insert(available, row)
+			end
+		end
+		_scenes = available
+	end
+	-- If every chapter in this mode is already cleared, keep the map on the
+	-- last authored chapter. The incomplete-chapter path points to the last
+	-- cleared chapter by subtracting one from the first locked chapter; with no
+	-- locked chapter, the last authored ID itself is the correct destination.
+	if sceneid == 0 and _scenes ~= nil then
+		local lastSceneId = 0
+		for _, row in pairs(_scenes) do
+			local id = dms.atoi(row, pve_scene.id)
+			if id > lastSceneId then lastSceneId = id end
+		end
+		if lastSceneId > 0 then
+			sceneid = lastSceneId
 		end
 	end
 	return sceneid
